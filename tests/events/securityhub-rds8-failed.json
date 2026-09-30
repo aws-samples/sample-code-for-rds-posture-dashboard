@@ -1,0 +1,37 @@
+{
+  "detail-type": "Security Hub Findings - Imported",
+  "resources": [],
+  "detail": {
+    "findings": [
+      {
+        "SchemaVersion": "2018-10-08",
+        "Id": "arn:aws:securityhub:{{REGION}}:{{ACCOUNT}}:security-control/RDS.8/finding/{{UUID}}",
+        "ProductArn": "arn:aws:securityhub:{{REGION}}::product/aws/securityhub",
+        "GeneratorId": "security-control/RDS.8",
+        "AwsAccountId": "{{ACCOUNT}}",
+        "Title": "RDS DB instances should have deletion protection enabled",
+        "Severity": { "Label": "LOW" },
+        "Compliance": { "Status": "FAILED", "SecurityControlId": "RDS.8" },
+        "Resources": [
+          {
+            "Type": "AwsRdsDbInstance",
+            "Id": "arn:aws:rds:{{REGION}}:{{ACCOUNT}}:db:rds-posture-test-1",
+            "Region": "{{REGION}}",
+            "Details": {
+              "AwsRdsDbInstance": {
+                "DbInstanceIdentifier": "rds-posture-test-1",
+                "Engine": "postgres",
+                "EngineVersion": "15.7"
+              }
+            }
+          }
+        ],
+        "Workflow": { "Status": "NEW" },
+        "RecordState": "ACTIVE",
+        "CreatedAt": "{{TIME}}",
+        "UpdatedAt": "{{TIME}}",
+        "synthetic": true
+      }
+    ]
+  }
+}

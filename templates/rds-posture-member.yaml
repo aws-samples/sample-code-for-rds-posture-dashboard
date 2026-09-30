@@ -1,0 +1,218 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  RDS posture - member stack. Deploy to every account with a service-managed StackSet (or once
+  per Region for a single-account demo). Forwards Trusted Advisor, Security Hub CSPM, CloudTrail
+  (RDS API), AWS Config and AWS Health events about RDS resources from this account's default
+  event bus to the central rds-posture bus. Where each feed originates - us-east-1: Trusted
+  Advisor (global service); the Security Hub delegated administrator's home Region: all Security
+  Hub findings (cross-Region aggregation); every Region that hosts RDS: CloudTrail API events,
+  Config compliance changes and AWS Health events (Health delivers Region-specific events in the
+  Region of the affected resource). Deploy accordingly.
+
+Parameters:
+  CentralBusArn:
+    Type: String
+    Description: ARN of the central event bus (output EventBusArn of the rds-posture-central stack).
+    AllowedPattern: ^arn:aws[a-z-]*:events:[a-z0-9-]+:\d{12}:event-bus/.+$
+  SeedEventSource:
+    Type: String
+    Default: rds-posture.seed
+    Description: Extra source accepted by the rules so seeded / test events can be injected with PutEvents.
+  EnableSecurityHubRule:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: >-
+      Create the Security Hub forwarding rule. Set to false everywhere except the Security Hub
+      delegated administrator account when cross-Region aggregation is on - the administrator's
+      home Region already carries every member account's findings, so rules in member accounts
+      only duplicate them.
+  EnableHealthRule:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: >-
+      Create the AWS Health forwarding rule. Set to false in member accounts when AWS Health
+      organizational view is enabled and the management or delegated administrator account
+      forwards events for the whole organization.
+  ExcludeHealthBackupEvents:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: >-
+      Drop the backup-Region copy of each AWS Health event (detail.backupEvent present). Set to
+      true when the deployed Regions include a backup Region (us-west-2 backs up every other
+      Region; us-east-1 backs up us-west-2) and the primary Region also runs this stack, so the
+      dashboard counts each Health event once. Leave false when the backup copy may be the only
+      copy this account receives.
+
+Conditions:
+  SecurityHubRuleEnabled: !Equals [!Ref EnableSecurityHubRule, 'true']
+  HealthRuleEnabled: !Equals [!Ref EnableHealthRule, 'true']
+  DropBackupEvents: !Equals [!Ref ExcludeHealthBackupEvents, 'true']
+
+Resources:
+  # EventBridge requires an IAM role on every cross-account event bus target (since 2 March 2023).
+  # Scoping the role to the central bus ARN keeps SCPs and organization boundaries in force.
+  ForwarderRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub rds-posture-forwarder-${AWS::Region}
+      Description: Lets EventBridge rules in this account put RDS posture events on the central bus.
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: put-events-to-central-bus
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: events:PutEvents
+                Resource: !Ref CentralBusArn
+
+  TrustedAdvisorForwardRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: rds-posture-fwd-trusted-advisor
+      Description: Forward Trusted Advisor RDS / Aurora check item changes to the central bus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.trustedadvisor
+          - !Ref SeedEventSource
+        detail-type:
+          - Trusted Advisor Check Item Refresh Notification
+        detail:
+          check-name:
+            - wildcard: '*RDS*'
+            - wildcard: '*Aurora*'
+      Targets:
+        - Id: central-bus
+          Arn: !Ref CentralBusArn
+          RoleArn: !GetAtt ForwarderRole.Arn
+
+  SecurityHubForwardRule:
+    Type: AWS::Events::Rule
+    Condition: SecurityHubRuleEnabled
+    Properties:
+      Name: rds-posture-fwd-security-hub
+      Description: Forward Security Hub RDS.* control findings to the central bus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.securityhub
+          - !Ref SeedEventSource
+        detail-type:
+          - Security Hub Findings - Imported
+        detail:
+          findings:
+            Compliance:
+              SecurityControlId:
+                - prefix: 'RDS.'
+      Targets:
+        - Id: central-bus
+          Arn: !Ref CentralBusArn
+          RoleArn: !GetAtt ForwarderRole.Arn
+
+  ApiActivityForwardRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: rds-posture-fwd-api-activity
+      Description: Forward CloudTrail RDS API calls that change protection posture (deletion protection off, unprotected create, delete) to the central bus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.rds
+          - !Ref SeedEventSource
+        detail-type:
+          - AWS API Call via CloudTrail
+        detail:
+          eventSource:
+            - rds.amazonaws.com
+          $or:
+            - eventName:
+                - ModifyDBInstance
+                - ModifyDBCluster
+              requestParameters:
+                deletionProtection:
+                  - false
+            - eventName:
+                - CreateDBInstance
+                - CreateDBCluster
+              requestParameters:
+                deletionProtection:
+                  - false
+                  - exists: false
+            - eventName:
+                - DeleteDBInstance
+                - DeleteDBCluster
+      Targets:
+        - Id: central-bus
+          Arn: !Ref CentralBusArn
+          RoleArn: !GetAtt ForwarderRole.Arn
+
+  ConfigForwardRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: rds-posture-fwd-config-compliance
+      Description: Forward AWS Config compliance changes on RDS resources to the central bus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.config
+          - !Ref SeedEventSource
+        detail-type:
+          - Config Rules Compliance Change
+        detail:
+          resourceType:
+            - AWS::RDS::DBInstance
+            - AWS::RDS::DBCluster
+      Targets:
+        - Id: central-bus
+          Arn: !Ref CentralBusArn
+          RoleArn: !GetAtt ForwarderRole.Arn
+
+  HealthForwardRule:
+    Type: AWS::Events::Rule
+    Condition: HealthRuleEnabled
+    Properties:
+      Name: rds-posture-fwd-health
+      Description: Forward AWS Health RDS events (planned lifecycle, scheduled changes) to the central bus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.health
+          - !Ref SeedEventSource
+        detail-type:
+          - AWS Health Event
+        detail: !If
+          - DropBackupEvents
+          - service:
+              - RDS
+            backupEvent:
+              - exists: false
+          - service:
+              - RDS
+      Targets:
+        - Id: central-bus
+          Arn: !Ref CentralBusArn
+          RoleArn: !GetAtt ForwarderRole.Arn
+
+Outputs:
+  ForwarderRoleArn:
+    Description: IAM role EventBridge assumes to put events on the central bus.
+    Value: !GetAtt ForwarderRole.Arn
+  RuleNames:
+    Description: Forwarding rules created on this account's default event bus.
+    Value: !Join
+      - ','
+      - - !Ref TrustedAdvisorForwardRule
+        - !If [SecurityHubRuleEnabled, !Ref SecurityHubForwardRule, !Ref 'AWS::NoValue']
+        - !Ref ApiActivityForwardRule
+        - !Ref ConfigForwardRule
+        - !If [HealthRuleEnabled, !Ref HealthForwardRule, !Ref 'AWS::NoValue']

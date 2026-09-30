@@ -1,0 +1,37 @@
+{
+  "detail-type": "Security Hub Findings - Imported",
+  "resources": [],
+  "detail": {
+    "findings": [
+      {
+        "SchemaVersion": "2018-10-08",
+        "Id": "arn:aws:securityhub:{{REGION}}:{{ACCOUNT}}:security-control/RDS.1/finding/{{UUID}}",
+        "ProductArn": "arn:aws:securityhub:{{REGION}}::product/aws/securityhub",
+        "GeneratorId": "security-control/RDS.1",
+        "AwsAccountId": "{{ACCOUNT}}",
+        "Title": "RDS snapshots should prohibit public access",
+        "Severity": { "Label": "CRITICAL" },
+        "Compliance": { "Status": "FAILED", "SecurityControlId": "RDS.1" },
+        "Resources": [
+          {
+            "Type": "AwsRdsDbSnapshot",
+            "Id": "arn:aws:rds:{{REGION}}:{{ACCOUNT}}:snapshot:rds-posture-test-snapshot",
+            "Region": "{{REGION}}",
+            "Details": {
+              "AwsRdsDbSnapshot": {
+                "DbSnapshotIdentifier": "rds-posture-test-snapshot",
+                "Engine": "postgres",
+                "EngineVersion": "15.7"
+              }
+            }
+          }
+        ],
+        "Workflow": { "Status": "NEW" },
+        "RecordState": "ACTIVE",
+        "CreatedAt": "{{TIME}}",
+        "UpdatedAt": "{{TIME}}",
+        "synthetic": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "detail-type": "AWS Health Event",
+  "resources": ["arn:aws:rds:{{REGION}}:{{ACCOUNT}}:db:rds-posture-test-1"],
+  "detail": {
+    "eventArn": "arn:aws:health:{{REGION}}::event/RDS/AWS_RDS_PLANNED_LIFECYCLE_EVENT/synthetic-{{UUID}}",
+    "service": "RDS",
+    "eventTypeCode": "AWS_RDS_PLANNED_LIFECYCLE_EVENT",
+    "eventTypeCategory": "scheduledChange",
+    "startTime": "Wed, 1 Apr 2027 00:00:00 GMT",
+    "affectedAccount": "{{ACCOUNT}}",
+    "eventDescription": [
+      {
+        "language": "en_US",
+        "latestDescription": "SYNTHETIC: Amazon RDS for PostgreSQL 13 reaches end of standard support; remaining instances enter RDS Extended Support."
+      }
+    ],
+    "affectedEntities": [{ "entityValue": "arn:aws:rds:{{REGION}}:{{ACCOUNT}}:db:rds-posture-test-1" }],
+    "synthetic": true
+  }
+}

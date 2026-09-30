@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.json.tmp
+.DS_Store
+/reports/
+
+# Terraform working files - the provider lock files (.terraform.lock.hcl) are committed on purpose
+**/.terraform/
+*.tfstate
+*.tfstate.*
+**/terraform.tfstate.d/
+*.tfvars
+!*.tfvars.example
+*.tfplan
+crash.log
+crash.*.log

@@ -1,0 +1,17 @@
+{
+  "detail-type": "Trusted Advisor Check Item Refresh Notification",
+  "resources": ["arn:aws:rds:{{REGION}}:{{ACCOUNT}}:db:rds-posture-test-1"],
+  "detail": {
+    "check-name": "Amazon RDS Backups",
+    "check-item-detail": {
+      "Region": "{{REGION}}",
+      "DB Instance": "rds-posture-test-1",
+      "Backup Retention Period": "0",
+      "Status": "Red"
+    },
+    "status": "ERROR",
+    "resource_id": "arn:aws:rds:{{REGION}}:{{ACCOUNT}}:db:rds-posture-test-1",
+    "uuid": "{{UUID}}",
+    "synthetic": true
+  }
+}

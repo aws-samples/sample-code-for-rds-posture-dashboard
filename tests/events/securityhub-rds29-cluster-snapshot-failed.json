@@ -1,0 +1,37 @@
+{
+  "detail-type": "Security Hub Findings - Imported",
+  "resources": [],
+  "detail": {
+    "findings": [
+      {
+        "SchemaVersion": "2018-10-08",
+        "Id": "arn:aws:securityhub:{{REGION}}:{{ACCOUNT}}:security-control/RDS.29/finding/{{UUID}}",
+        "ProductArn": "arn:aws:securityhub:{{REGION}}::product/aws/securityhub",
+        "GeneratorId": "security-control/RDS.29",
+        "AwsAccountId": "{{ACCOUNT}}",
+        "Title": "RDS DB cluster snapshots should be tagged",
+        "Severity": { "Label": "LOW" },
+        "Compliance": { "Status": "FAILED", "SecurityControlId": "RDS.29" },
+        "Resources": [
+          {
+            "Type": "AwsRdsDbClusterSnapshot",
+            "Id": "arn:aws:rds:{{REGION}}:{{ACCOUNT}}:cluster-snapshot:rds-posture-test-cluster-snapshot",
+            "Region": "{{REGION}}",
+            "Details": {
+              "AwsRdsDbClusterSnapshot": {
+                "DbClusterSnapshotIdentifier": "rds-posture-test-cluster-snapshot",
+                "Engine": "aurora-mysql",
+                "EngineVersion": "8.0.mysql_aurora.3.10.3"
+              }
+            }
+          }
+        ],
+        "Workflow": { "Status": "NEW" },
+        "RecordState": "ACTIVE",
+        "CreatedAt": "{{TIME}}",
+        "UpdatedAt": "{{TIME}}",
+        "synthetic": true
+      }
+    ]
+  }
+}

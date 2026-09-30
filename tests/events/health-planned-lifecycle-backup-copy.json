@@ -1,0 +1,22 @@
+{
+  "detail-type": "AWS Health Event",
+  "resources": ["arn:aws:rds:{{REGION}}:{{ACCOUNT}}:db:rds-posture-test-1"],
+  "detail": {
+    "eventArn": "arn:aws:health:{{REGION}}::event/RDS/AWS_RDS_PLANNED_LIFECYCLE_EVENT/synthetic-{{UUID}}",
+    "service": "RDS",
+    "eventTypeCode": "AWS_RDS_PLANNED_LIFECYCLE_EVENT",
+    "eventTypeCategory": "scheduledChange",
+    "startTime": "Wed, 1 Apr 2027 00:00:00 GMT",
+    "affectedAccount": "{{ACCOUNT}}",
+    "backupEvent": true,
+    "communicationId": "synthetic-{{UUID}}",
+    "eventDescription": [
+      {
+        "language": "en_US",
+        "latestDescription": "SYNTHETIC: backup-Region copy of the planned lifecycle event. Matched by the default Health rule; dropped when ExcludeHealthBackupEvents / exclude_health_backup_events is set."
+      }
+    ],
+    "affectedEntities": [{ "entityValue": "arn:aws:rds:{{REGION}}:{{ACCOUNT}}:db:rds-posture-test-1" }],
+    "synthetic": true
+  }
+}

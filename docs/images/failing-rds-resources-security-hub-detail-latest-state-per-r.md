@@ -1,0 +1,39 @@
+## Failing RDS resources - Security Hub detail (latest state per resource and control)
+
+33 rows
+
+| control | acct | resource | engine | engineVersion | current | title | region | lastSeenAt |
+|---|---|---|---|---|---|---|---|---|
+| RDS.6 | 111122223333 | arn:aws:rds:us-east-1:111122223333:db:example-db-03 | aurora-postgresql | 15.15 | FAILED | Enhanced monitoring should be configured for RDS DB instances | us-east-1 | 2026-09-30 08:34:44.000 |
+| RDS.6 | 111122223333 | arn:aws:rds:us-east-1:111122223333:db:example-db-02 | aurora-mysql | 8.0.mysql_aurora.3.10.3 | FAILED | Enhanced monitoring should be configured for RDS DB instances | us-east-1 | 2026-09-30 02:34:25.000 |
+| RDS.7 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster:example-cluster-01 | aurora-mysql | 8.0.mysql_aurora.3.10.3 | FAILED | RDS clusters should have deletion protection enabled | us-east-1 | 2026-09-29 20:34:49.000 |
+| RDS.7 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster:example-cluster-02 | aurora-postgresql | 15.15 | FAILED | RDS clusters should have deletion protection enabled | us-east-1 | 2026-09-30 08:34:55.000 |
+| RDS.9 | 111122223333 | arn:aws:rds:us-east-1:111122223333:db:example-db-02 | aurora-mysql | 8.0.mysql_aurora.3.10.3 | FAILED | RDS DB instances should publish logs to CloudWatch Logs | us-east-1 | 2026-09-30 08:35:00.000 |
+| RDS.9 | 111122223333 | arn:aws:rds:us-east-1:111122223333:db:example-db-03 | aurora-postgresql | 15.15 | FAILED | RDS DB instances should publish logs to CloudWatch Logs | us-east-1 | 2026-09-30 02:34:13.000 |
+| RDS.10 | 111122223333 | arn:aws:rds:us-east-1:111122223333:db:example-db-03 | aurora-postgresql | 15.15 | FAILED | IAM authentication should be configured for RDS instances | us-east-1 | 2026-09-30 08:34:46.000 |
+| RDS.10 | 111122223333 | arn:aws:rds:us-east-1:111122223333:db:example-db-02 | aurora-mysql | 8.0.mysql_aurora.3.10.3 | FAILED | IAM authentication should be configured for RDS instances | us-east-1 | 2026-09-30 02:35:01.000 |
+| RDS.12 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster:example-cluster-02 | aurora-postgresql | 15.15 | FAILED | IAM authentication should be configured for RDS clusters | us-east-1 | 2026-09-30 08:35:09.000 |
+| RDS.12 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster:example-cluster-01 | aurora-mysql | 8.0.mysql_aurora.3.10.3 | FAILED | IAM authentication should be configured for RDS clusters | us-east-1 | 2026-09-30 08:34:41.000 |
+| RDS.14 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster:example-cluster-01 | aurora-mysql | 8.0.mysql_aurora.3.10.3 | FAILED | Amazon Aurora clusters should have backtracking enabled | us-east-1 | 2026-09-30 08:34:38.000 |
+| RDS.15 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster:example-cluster-01 | aurora-mysql | 8.0.mysql_aurora.3.10.3 | FAILED | RDS DB clusters should be configured for multiple Availability Zones | us-east-1 | 2026-09-29 20:34:18.000 |
+| RDS.15 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster:example-cluster-02 | aurora-postgresql | 15.15 | FAILED | RDS DB clusters should be configured for multiple Availability Zones | us-east-1 | 2026-09-30 08:35:16.000 |
+| RDS.16 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster:example-cluster-02 | aurora-postgresql | 15.15 | FAILED | Aurora DB clusters should be configured to copy tags to DB snapshots | us-east-1 | 2026-09-30 08:34:50.000 |
+| RDS.16 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster:example-cluster-01 | aurora-mysql | 8.0.mysql_aurora.3.10.3 | FAILED | Aurora DB clusters should be configured to copy tags to DB snapshots | us-east-1 | 2026-09-30 08:34:46.000 |
+| RDS.29 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster-snapshot:example-cluster-snapshot-14 | aurora-postgresql | 15.15 | FAILED | RDS DB cluster snapshots should be tagged | us-east-1 | 2026-09-30 01:36:20.000 |
+| RDS.29 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster-snapshot:example-cluster-snapshot-03 | aurora-mysql | 8.0.mysql_aurora.3.10.3 | FAILED | RDS DB cluster snapshots should be tagged | us-east-1 | 2026-09-30 08:34:59.000 |
+| RDS.29 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster-snapshot:example-cluster-snapshot-02 | aurora-mysql | 8.0.mysql_aurora.3.10.3 | FAILED | RDS DB cluster snapshots should be tagged | us-east-1 | 2026-09-30 08:35:04.000 |
+| RDS.29 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster-snapshot:example-cluster-snapshot-05 | aurora-mysql | 8.0.mysql_aurora.3.10.3 | FAILED | RDS DB cluster snapshots should be tagged | us-east-1 | 2026-09-30 08:35:00.000 |
+| RDS.29 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster-snapshot:example-cluster-snapshot-12 | aurora-postgresql | 15.15 | FAILED | RDS DB cluster snapshots should be tagged | us-east-1 | 2026-09-30 08:34:58.000 |
+| RDS.29 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster-snapshot:example-cluster-snapshot-07 | aurora-mysql | 8.0.mysql_aurora.3.10.3 | FAILED | RDS DB cluster snapshots should be tagged | us-east-1 | 2026-09-30 01:35:29.000 |
+| RDS.29 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster-snapshot:example-cluster-snapshot-01 | aurora-mysql | 8.0.mysql_aurora.3.10.3 | FAILED | RDS DB cluster snapshots should be tagged | us-east-1 | 2026-09-30 02:34:56.000 |
+| RDS.29 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster-snapshot:example-cluster-snapshot-09 | aurora-postgresql | 15.15 | FAILED | RDS DB cluster snapshots should be tagged | us-east-1 | 2026-09-30 02:35:15.000 |
+| RDS.29 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster-snapshot:example-cluster-snapshot-08 | aurora-postgresql | 15.15 | FAILED | RDS DB cluster snapshots should be tagged | us-east-1 | 2026-09-30 02:34:33.000 |
+| RDS.29 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster-snapshot:example-cluster-snapshot-11 | aurora-postgresql | 15.15 | FAILED | RDS DB cluster snapshots should be tagged | us-east-1 | 2026-09-30 02:35:15.000 |
+| RDS.29 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster-snapshot:example-cluster-snapshot-06 | aurora-mysql | 8.0.mysql_aurora.3.10.3 | FAILED | RDS DB cluster snapshots should be tagged | us-east-1 | 2026-09-29 20:34:35.000 |
+| RDS.29 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster-snapshot:example-cluster-snapshot-13 | aurora-postgresql | 15.15 | FAILED | RDS DB cluster snapshots should be tagged | us-east-1 | 2026-09-29 20:34:42.000 |
+| RDS.29 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster-snapshot:example-cluster-snapshot-04 | aurora-mysql | 8.0.mysql_aurora.3.10.3 | FAILED | RDS DB cluster snapshots should be tagged | us-east-1 | 2026-09-30 02:34:45.000 |
+| RDS.29 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster-snapshot:example-cluster-snapshot-10 | aurora-postgresql | 15.15 | FAILED | RDS DB cluster snapshots should be tagged | us-east-1 | 2026-09-29 20:34:34.000 |
+| RDS.33 | 111122223333 | arn:aws:rds:us-east-1:111122223333:subgrp:example-subnet-group-01 |  |  | FAILED | RDS DB subnet groups should be tagged | us-east-1 | 2026-09-29 20:34:07.000 |
+| RDS.34 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster:example-cluster-01 | aurora-mysql | 8.0.mysql_aurora.3.10.3 | FAILED | Aurora MySQL DB clusters should publish audit logs to CloudWatch Logs | us-east-1 | 2026-09-30 02:34:11.000 |
+| RDS.37 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster:example-cluster-02 | aurora-postgresql | 15.15 | FAILED | Aurora PostgreSQL DB clusters should publish logs to CloudWatch Logs | us-east-1 | 2026-09-29 20:34:51.000 |
+| RDS.45 | 111122223333 | arn:aws:rds:us-east-1:111122223333:cluster:example-cluster-01 | aurora-mysql | 8.0.mysql_aurora.3.10.3 | FAILED | Aurora MySQL DB clusters should have audit logging enabled | us-east-1 | 2026-09-30 08:16:46.000 |

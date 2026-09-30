@@ -1,0 +1,442 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  RDS posture - central stack. Deploy once, in the monitoring account, in us-east-1.
+  Receives Trusted Advisor, Security Hub CSPM, CloudTrail (RDS API), AWS Config and AWS Health
+  events about Amazon RDS resources on a custom event bus, stores them in CloudWatch Logs,
+  derives metrics, raises alarms and renders a CloudWatch dashboard. No Lambda, no external store.
+
+Parameters:
+  BusName:
+    Type: String
+    Default: rds-posture-bus
+    Description: Name of the custom event bus that member accounts forward RDS events to.
+  AllowedOrgIds:
+    Type: String
+    Default: ''
+    AllowedPattern: ^$|^o-[a-z0-9]{10,32}(,o-[a-z0-9]{10,32})*$
+    ConstraintDescription: Empty, or comma-separated organization IDs like o-a1b2c3d4e5 (no spaces).
+    Description: >-
+      Comma-separated AWS Organizations IDs (o-xxxxxxxxxx) whose member accounts may PutEvents to the
+      bus. Leave empty for a single-account deployment; same-account access is always allowed.
+  LogRetentionDays:
+    Type: Number
+    Default: 365
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653]
+    Description: Retention (days) for the raw event log group (CloudWatch Logs retention values only); the default keeps one year.
+  AlarmEmail:
+    Type: String
+    Default: ''
+    Description: Optional e-mail address subscribed to the alerts topic (confirm the subscription e-mail).
+  MetricStatuses:
+    Type: String
+    Default: failed-only
+    AllowedValues: [failed-only, all]
+    Description: >-
+      failed-only (default) publishes Security Hub metrics for FAILED findings only, which keeps the
+      number of custom metrics - and the bill - low at organization scale. all also publishes PASSED,
+      WARNING and NOT_AVAILABLE so you can chart pass/fail ratios.
+  SeedEventSource:
+    Type: String
+    Default: rds-posture.seed
+    Description: >-
+      Extra event source accepted by every rule. The harness uses it to seed the baseline from the
+      current Security Hub / Trusted Advisor state and to inject test events (custom events may not use
+      the reserved aws.* sources).
+  DashboardName:
+    Type: String
+    Default: RDS-Posture
+    Description: Name of the CloudWatch dashboard. Dashboard names are account-wide, so pick a distinct one per deployment.
+  AlertsTopicKmsKeyId:
+    Type: String
+    Default: ''
+    Description: >-
+      Optional customer managed KMS key (ID, ARN or alias) for server-side encryption of the
+      alerts topic. It must be a customer managed key whose key policy grants
+      cloudwatch.amazonaws.com kms:GenerateDataKey* and kms:Decrypt, or the alarms cannot publish
+      to the topic - the AWS managed alias/aws/sns key does not allow that, which is why the topic
+      is unencrypted by default.
+
+Conditions:
+  HasOrgIds: !Not [!Equals [!Ref AllowedOrgIds, '']]
+  HasEmail: !Not [!Equals [!Ref AlarmEmail, '']]
+  AllStatuses: !Equals [!Ref MetricStatuses, all]
+  HasTopicKey: !Not [!Equals [!Ref AlertsTopicKmsKeyId, '']]
+
+Resources:
+  # ---------------------------------------------------------------- event bus
+  EventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Ref BusName
+
+  EventBusPolicySameAccount:
+    Type: AWS::Events::EventBusPolicy
+    Properties:
+      EventBusName: !Ref EventBus
+      StatementId: AllowSameAccountPutEvents
+      Statement:
+        Effect: Allow
+        Principal:
+          AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+        Action: events:PutEvents
+        Resource: !GetAtt EventBus.Arn
+
+  # Cross-account / cross-organization access. Principals from every listed organization may put
+  # events; the sending account still needs its own IAM role on the forwarding rule (member stack).
+  EventBusPolicyOrg:
+    Type: AWS::Events::EventBusPolicy
+    Condition: HasOrgIds
+    Properties:
+      EventBusName: !Ref EventBus
+      StatementId: AllowOrganizationPutEvents
+      Statement:
+        Effect: Allow
+        Principal: '*'
+        Action: events:PutEvents
+        Resource: !GetAtt EventBus.Arn
+        Condition:
+          StringEquals:
+            aws:PrincipalOrgID: !Split [',', !Ref AllowedOrgIds]
+
+  # ---------------------------------------------------------------- raw event store
+  EventLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /rds-posture/events
+      RetentionInDays: !Ref LogRetentionDays
+
+  # aws:SourceAccount keeps another account's EventBridge from writing here through the service
+  # principal (confused-deputy protection).
+  EventLogGroupPolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: rds-posture-eventbridge-to-logs
+      PolicyDocument: !Sub |
+        {"Version":"2012-10-17","Statement":[{"Effect":"Allow",
+         "Principal":{"Service":["events.amazonaws.com","delivery.logs.amazonaws.com"]},
+         "Action":["logs:CreateLogStream","logs:PutLogEvents"],
+         "Resource":"${EventLogGroup.Arn}",
+         "Condition":{"StringEquals":{"aws:SourceAccount":"${AWS::AccountId}"}}}]}
+
+  # ---------------------------------------------------------------- rules on the custom bus
+  TrustedAdvisorRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: rds-posture-trusted-advisor
+      Description: Trusted Advisor check item status changes for RDS / Aurora checks
+      EventBusName: !Ref EventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.trustedadvisor
+          - !Ref SeedEventSource
+        detail-type:
+          - Trusted Advisor Check Item Refresh Notification
+        detail:
+          check-name:
+            - wildcard: '*RDS*'
+            - wildcard: '*Aurora*'
+      Targets:
+        - Id: logs
+          Arn: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${EventLogGroup}
+
+  SecurityHubRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: rds-posture-security-hub
+      Description: Security Hub CSPM findings for RDS.* controls (new and updated)
+      EventBusName: !Ref EventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.securityhub
+          - !Ref SeedEventSource
+        detail-type:
+          - Security Hub Findings - Imported
+        detail:
+          findings:
+            Compliance:
+              SecurityControlId:
+                - prefix: 'RDS.'
+      Targets:
+        - Id: logs
+          Arn: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${EventLogGroup}
+
+  ApiActivityRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: rds-posture-api-activity
+      Description: >-
+        CloudTrail API activity that changes RDS protection posture - deletion protection switched off,
+        instance/cluster created without it, or instance/cluster deleted (transition-based, near real time).
+      EventBusName: !Ref EventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.rds
+          - !Ref SeedEventSource
+        detail-type:
+          - AWS API Call via CloudTrail
+        detail:
+          eventSource:
+            - rds.amazonaws.com
+          $or:
+            - eventName:
+                - ModifyDBInstance
+                - ModifyDBCluster
+              requestParameters:
+                deletionProtection:
+                  - false
+            - eventName:
+                - CreateDBInstance
+                - CreateDBCluster
+              requestParameters:
+                deletionProtection:
+                  - false
+                  - exists: false
+            - eventName:
+                - DeleteDBInstance
+                - DeleteDBCluster
+      Targets:
+        - Id: logs
+          Arn: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${EventLogGroup}
+
+  ConfigRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: rds-posture-config-compliance
+      Description: >-
+        AWS Config rule compliance changes on RDS instances and clusters. Only customer-managed Config
+        rules (for example a conformance pack) emit these; Security Hub's service-linked rules do not.
+      EventBusName: !Ref EventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.config
+          - !Ref SeedEventSource
+        detail-type:
+          - Config Rules Compliance Change
+        detail:
+          resourceType:
+            - AWS::RDS::DBInstance
+            - AWS::RDS::DBCluster
+      Targets:
+        - Id: logs
+          Arn: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${EventLogGroup}
+
+  HealthRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: rds-posture-health
+      Description: AWS Health events for RDS (planned lifecycle / end of standard support, scheduled changes)
+      EventBusName: !Ref EventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.health
+          - !Ref SeedEventSource
+        detail-type:
+          - AWS Health Event
+        detail:
+          service:
+            - RDS
+      Targets:
+        - Id: logs
+          Arn: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${EventLogGroup}
+
+  # ---------------------------------------------------------------- metrics derived from the log
+  # Every metric filter keys on detail-type (not source) so seeded and test events count like real ones.
+  TaFlaggedItemsFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref EventLogGroup
+      FilterName: ta-rds-flagged-items
+      FilterPattern: '{ ($.detail-type = "Trusted Advisor Check Item Refresh Notification") && (($.detail.status = "ERROR") || ($.detail.status = "WARN")) }'
+      MetricTransformations:
+        - MetricNamespace: RDSPosture
+          MetricName: TrustedAdvisorRdsFlaggedItems
+          MetricValue: '1'
+          Unit: Count
+          Dimensions:
+            - Key: CheckName
+              Value: $.detail.check-name
+            - Key: Status
+              Value: $.detail.status
+
+  SecurityHubFindingsFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref EventLogGroup
+      FilterName: securityhub-rds-findings
+      FilterPattern: !If
+        - AllStatuses
+        - '{ ($.detail-type = "Security Hub Findings - Imported") && ($.detail.findings[0].Compliance.SecurityControlId = "RDS.*") }'
+        - '{ ($.detail-type = "Security Hub Findings - Imported") && ($.detail.findings[0].Compliance.SecurityControlId = "RDS.*") && ($.detail.findings[0].Compliance.Status = "FAILED") }'
+      MetricTransformations:
+        - MetricNamespace: RDSPosture
+          MetricName: SecurityHubRdsFindings
+          MetricValue: '1'
+          Unit: Count
+          Dimensions:
+            - Key: ControlId
+              Value: $.detail.findings[0].Compliance.SecurityControlId
+            - Key: Status
+              Value: $.detail.findings[0].Compliance.Status
+
+  DeletionProtectionFailedFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref EventLogGroup
+      FilterName: securityhub-rds-deletion-protection-failed
+      FilterPattern: '{ ($.detail-type = "Security Hub Findings - Imported") && ($.detail.findings[0].Compliance.Status = "FAILED") && (($.detail.findings[0].Compliance.SecurityControlId = "RDS.7") || ($.detail.findings[0].Compliance.SecurityControlId = "RDS.8")) }'
+      MetricTransformations:
+        - MetricNamespace: RDSPosture
+          MetricName: RdsDeletionProtectionFailedFindings
+          MetricValue: '1'
+          Unit: Count
+
+  ApiDeletionProtectionDisabledFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref EventLogGroup
+      FilterName: api-rds-deletion-protection-disabled
+      FilterPattern: '{ ($.detail-type = "AWS API Call via CloudTrail") && ($.detail.eventSource = "rds.amazonaws.com") && (($.detail.eventName = "ModifyDBInstance") || ($.detail.eventName = "ModifyDBCluster")) && ($.detail.requestParameters.deletionProtection IS FALSE) }'
+      MetricTransformations:
+        - MetricNamespace: RDSPosture
+          MetricName: RdsDeletionProtectionDisabledApiCalls
+          MetricValue: '1'
+          Unit: Count
+
+  ApiUnprotectedCreateFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref EventLogGroup
+      FilterName: api-rds-created-without-deletion-protection
+      FilterPattern: '{ ($.detail-type = "AWS API Call via CloudTrail") && ($.detail.eventSource = "rds.amazonaws.com") && (($.detail.eventName = "CreateDBInstance") || ($.detail.eventName = "CreateDBCluster")) && (($.detail.requestParameters.deletionProtection IS FALSE) || ($.detail.requestParameters.deletionProtection NOT EXISTS)) }'
+      MetricTransformations:
+        - MetricNamespace: RDSPosture
+          MetricName: RdsCreatedWithoutDeletionProtectionApiCalls
+          MetricValue: '1'
+          Unit: Count
+
+  ApiDeleteFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref EventLogGroup
+      FilterName: api-rds-delete
+      FilterPattern: '{ ($.detail-type = "AWS API Call via CloudTrail") && ($.detail.eventSource = "rds.amazonaws.com") && (($.detail.eventName = "DeleteDBInstance") || ($.detail.eventName = "DeleteDBCluster")) }'
+      MetricTransformations:
+        - MetricNamespace: RDSPosture
+          MetricName: RdsDeleteApiCalls
+          MetricValue: '1'
+          Unit: Count
+
+  ConfigNonCompliantFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref EventLogGroup
+      FilterName: config-rds-non-compliant
+      FilterPattern: '{ ($.detail-type = "Config Rules Compliance Change") && ($.detail.newEvaluationResult.complianceType = "NON_COMPLIANT") }'
+      MetricTransformations:
+        - MetricNamespace: RDSPosture
+          MetricName: ConfigRdsNonCompliantChanges
+          MetricValue: '1'
+          Unit: Count
+          Dimensions:
+            - Key: ConfigRuleName
+              Value: $.detail.configRuleName
+
+  HealthEventsFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref EventLogGroup
+      FilterName: health-rds-events
+      FilterPattern: '{ ($.detail-type = "AWS Health Event") && ($.detail.service = "RDS") }'
+      MetricTransformations:
+        - MetricNamespace: RDSPosture
+          MetricName: HealthRdsEvents
+          MetricValue: '1'
+          Unit: Count
+          Dimensions:
+            - Key: EventTypeCode
+              Value: $.detail.eventTypeCode
+
+  # ---------------------------------------------------------------- alerting
+  AlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: rds-posture-alerts
+      DisplayName: RDS posture alerts
+      KmsMasterKeyId: !If [HasTopicKey, !Ref AlertsTopicKmsKeyId, !Ref 'AWS::NoValue']
+
+  AlertsEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasEmail
+    Properties:
+      TopicArn: !Ref AlertsTopic
+      Protocol: email
+      Endpoint: !Ref AlarmEmail
+
+  DeletionProtectionDisabledApiAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: rds-posture-deletion-protection-disabled-api
+      AlarmDescription: Someone switched deletion protection OFF on an RDS instance or cluster (CloudTrail ModifyDBInstance/ModifyDBCluster with deletionProtection=false). Transition-based - fires once per change.
+      Namespace: RDSPosture
+      MetricName: RdsDeletionProtectionDisabledApiCalls
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertsTopic
+
+  DeletionProtectionAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: rds-posture-deletion-protection-failed
+      AlarmDescription: A Security Hub RDS.7/RDS.8 finding was imported as FAILED - an RDS instance or cluster is running without deletion protection. Re-fires each time Security Hub refreshes the finding (roughly every 12-24h) while the condition persists.
+      Namespace: RDSPosture
+      MetricName: RdsDeletionProtectionFailedFindings
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertsTopic
+
+  # ---------------------------------------------------------------- dashboard
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Ref DashboardName
+      DashboardBody: !Sub |
+        {"start":"-PT168H","periodOverride":"inherit","widgets":[
+         {"type":"text","x":0,"y":0,"width":24,"height":3,"properties":{"markdown":"## RDS posture\nSources: Trusted Advisor check-item events, Security Hub CSPM RDS.* controls, CloudTrail RDS API activity (deletion protection off / unprotected create / delete), AWS Config compliance changes (customer-managed rules only), AWS Health RDS lifecycle events. Raw events in CloudWatch Logs `${EventLogGroup}`; metrics in namespace `RDSPosture`. Tables show the latest known state per resource from the event stream (seed it once with the harness). The Security Hub detail table shows engine and engine version when ASFF resource details supply them; Security Hub and Config remain the authoritative current inventory."}},
+         {"type":"log","x":0,"y":3,"width":12,"height":8,"properties":{"title":"Security Hub RDS controls FAILING (latest state per resource) - by control and account","region":"${AWS::Region}","view":"table","query":"SOURCE '${EventLogGroup}' | fields @timestamp, `detail.findings.0.Compliance.SecurityControlId` as control, `detail.findings.0.AwsAccountId` as acct, `detail.findings.0.Resources.0.Id` as resource, `detail.findings.0.Compliance.Status` as status | filter `detail-type` = \"Security Hub Findings - Imported\" | stats latest(status) as current by control, acct, resource | filter current = \"FAILED\" | stats count(*) as failing by control, acct | sort failing desc"}},
+         {"type":"log","x":12,"y":3,"width":12,"height":8,"properties":{"title":"Trusted Advisor RDS items flagged WARN/ERROR (latest state per resource) - by check and account","region":"${AWS::Region}","view":"table","query":"SOURCE '${EventLogGroup}' | fields @timestamp, `detail.check-name` as check, `detail.status` as status, `detail.resource_id` as resource, `account` as acct | filter `detail-type` = \"Trusted Advisor Check Item Refresh Notification\" | stats latest(status) as current by check, acct, resource | filter current in [\"WARN\", \"ERROR\"] | stats count(*) as flagged by check, acct | sort flagged desc"}},
+         {"type":"log","x":0,"y":11,"width":24,"height":8,"properties":{"title":"Failing RDS resources - Security Hub detail (latest state per resource and control)","region":"${AWS::Region}","view":"table","query":"SOURCE '${EventLogGroup}' | fields @timestamp, `detail.findings.0.Compliance.SecurityControlId` as control, `detail.findings.0.Title` as titleRaw, `detail.findings.0.Resources.0.Id` as resource, `detail.findings.0.AwsAccountId` as acct, `detail.findings.0.Resources.0.Region` as regionRaw, `detail.findings.0.Compliance.Status` as status, coalesce(`detail.findings.0.Resources.0.Details.AwsRdsDbInstance.Engine`, `detail.findings.0.Resources.0.Details.AwsRdsDbCluster.Engine`, `detail.findings.0.Resources.0.Details.AwsRdsDbSnapshot.Engine`, `detail.findings.0.Resources.0.Details.AwsRdsDbClusterSnapshot.Engine`) as engineRaw, coalesce(`detail.findings.0.Resources.0.Details.AwsRdsDbInstance.EngineVersion`, `detail.findings.0.Resources.0.Details.AwsRdsDbCluster.EngineVersion`, `detail.findings.0.Resources.0.Details.AwsRdsDbSnapshot.EngineVersion`, `detail.findings.0.Resources.0.Details.AwsRdsDbClusterSnapshot.EngineVersion`) as engineVersionRaw | filter `detail-type` = \"Security Hub Findings - Imported\" | stats latest(status) as current, latest(titleRaw) as title, latest(regionRaw) as region, latest(engineRaw) as engine, latest(engineVersionRaw) as engineVersion, latest(@timestamp) as lastSeen by control, acct, resource | filter current = \"FAILED\" | fields fromMillis(lastSeen) as lastSeenAt | display control, acct, resource, engine, engineVersion, current, title, region, lastSeenAt | sort control asc | limit 200"}},
+         {"type":"log","x":0,"y":19,"width":24,"height":8,"properties":{"title":"Flagged RDS resources - Trusted Advisor detail (latest state per resource and check)","region":"${AWS::Region}","view":"table","query":"SOURCE '${EventLogGroup}' | fields @timestamp, `account` as acct, `detail.check-name` as check, `detail.status` as status, `detail.resource_id` as resource | filter `detail-type` = \"Trusted Advisor Check Item Refresh Notification\" | stats latest(status) as current, latest(@timestamp) as lastSeen by check, acct, resource | filter current in [\"WARN\", \"ERROR\"] | fields fromMillis(lastSeen) as lastSeenAt | sort check asc | limit 200"}},
+         {"type":"metric","x":0,"y":27,"width":12,"height":6,"properties":{"title":"Security Hub RDS control findings imported per hour (FAILED, by control)","region":"${AWS::Region}","view":"timeSeries","stacked":true,"period":3600,"stat":"Sum","metrics":[[{"expression":"SEARCH('{RDSPosture,ControlId,Status} MetricName=\"SecurityHubRdsFindings\" Status=\"FAILED\"', 'Sum', 3600)","id":"e1","region":"${AWS::Region}"}]]}},
+         {"type":"metric","x":12,"y":27,"width":12,"height":6,"properties":{"title":"Trusted Advisor RDS items flagged per hour (by check)","region":"${AWS::Region}","view":"timeSeries","stacked":true,"period":3600,"stat":"Sum","metrics":[[{"expression":"SEARCH('{RDSPosture,CheckName,Status} MetricName=\"TrustedAdvisorRdsFlaggedItems\"', 'Sum', 3600)","id":"e2","region":"${AWS::Region}"}]]}},
+         {"type":"metric","x":0,"y":33,"width":12,"height":6,"properties":{"title":"Trusted Advisor native metrics - RDS checks with Yellow/Red resources (this account)","region":"${AWS::Region}","view":"timeSeries","stacked":false,"period":300,"stat":"Maximum","metrics":[[{"expression":"SEARCH('{AWS/TrustedAdvisor,CheckName} MetricName=\"YellowResources\" RDS', 'Maximum', 300)","id":"e3","region":"${AWS::Region}"}],[{"expression":"SEARCH('{AWS/TrustedAdvisor,CheckName} MetricName=\"RedResources\" RDS', 'Maximum', 300)","id":"e4","region":"${AWS::Region}"}]]}},
+         {"type":"alarm","x":12,"y":33,"width":12,"height":6,"properties":{"title":"Alarms","alarms":["${DeletionProtectionDisabledApiAlarm.Arn}","${DeletionProtectionAlarm.Arn}"]}},
+         {"type":"log","x":0,"y":39,"width":24,"height":8,"properties":{"title":"Who changed RDS protection posture - deletion protection switched off, created unprotected, deleted (CloudTrail via EventBridge)","region":"${AWS::Region}","view":"table","query":"SOURCE '${EventLogGroup}' | fields @timestamp, `account` as acct, `region` as rgn, `detail.eventName` as api, `detail.userIdentity.arn` as who, `detail.sourceIPAddress` as ip, coalesce(`detail.requestParameters.dBInstanceIdentifier`, `detail.requestParameters.dBClusterIdentifier`) as db, `detail.requestParameters.deletionProtection` as deletionProtection, `detail.errorCode` as errorCode | filter `detail-type` = \"AWS API Call via CloudTrail\" | sort @timestamp desc | limit 100"}},
+         {"type":"log","x":0,"y":47,"width":12,"height":8,"properties":{"title":"AWS Config compliance changes on RDS resources (recent)","region":"${AWS::Region}","view":"table","query":"SOURCE '${EventLogGroup}' | fields @timestamp, `account` as acct, `region` as rgn, `detail.configRuleName` as rule, `detail.resourceType` as type, `detail.resourceId` as resource, `detail.newEvaluationResult.complianceType` as compliance | filter `detail-type` = \"Config Rules Compliance Change\" | sort @timestamp desc | display @timestamp, acct, rgn, rule, type, resource, compliance | limit 100"}},
+         {"type":"log","x":12,"y":47,"width":12,"height":8,"properties":{"title":"AWS Health RDS events - planned lifecycle / end of standard support / scheduled changes","region":"${AWS::Region}","view":"table","query":"SOURCE '${EventLogGroup}' | fields @timestamp, `detail.eventTypeCode` as eventType, `detail.eventTypeCategory` as category, `detail.startTime` as starts, `detail.affectedAccount` as affectedAcct, `detail.eventDescription.0.latestDescription` as description | filter `detail-type` = \"AWS Health Event\" | sort @timestamp desc | display @timestamp, eventType, category, starts, affectedAcct, description | limit 50"}}
+        ]}
+
+Outputs:
+  EventBusArn:
+    Description: Central bus ARN - pass as CentralBusArn to the member stack / StackSet
+    Value: !GetAtt EventBus.Arn
+  EventLogGroupName:
+    Value: !Ref EventLogGroup
+  AlertsTopicArn:
+    Value: !Ref AlertsTopic
+  DashboardUrl:
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${Dashboard}

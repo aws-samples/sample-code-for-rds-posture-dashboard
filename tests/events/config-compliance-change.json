@@ -1,0 +1,16 @@
+{
+  "detail-type": "Config Rules Compliance Change",
+  "resources": [],
+  "detail": {
+    "resourceId": "rds-posture-test-1",
+    "awsRegion": "{{REGION}}",
+    "awsAccountId": "{{ACCOUNT}}",
+    "configRuleName": "rds-instance-deletion-protection-enabled",
+    "recordVersion": "1.0",
+    "messageType": "ComplianceChangeNotification",
+    "resourceType": "AWS::RDS::DBInstance",
+    "newEvaluationResult": { "complianceType": "NON_COMPLIANT", "resultRecordedTime": "{{TIME}}" },
+    "oldEvaluationResult": { "complianceType": "NOT_APPLICABLE" },
+    "synthetic": true
+  }
+}
