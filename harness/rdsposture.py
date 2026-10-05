@@ -45,7 +45,7 @@ BUS_NAME = "rds-posture-bus"
 LOG_GROUP = "/rds-posture/events"
 DASHBOARD = "RDS-Posture"
 NAMESPACE = "RDSPosture"
-CENTRAL_RULES, MEMBER_RULES, METRIC_FILTERS = 5, 5, 8
+CENTRAL_RULES, MEMBER_RULES, METRIC_FILTERS = 5, 5, 9
 REDACTED_ACCOUNT = "111122223333"
 
 # ----------------------------------------------------------------------------- plumbing

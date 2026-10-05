@@ -60,7 +60,9 @@ configurations (`terraform/`); ask which toolchain the user wants (default Cloud
   resource use `stats latest(field) as current by keys | filter current = "FAILED"`. Do not reuse an
   existing field alias as a stats alias. Backtick field names that contain hyphens.
 - Custom events cannot use `aws.*` sources. Every rule accepts the `SeedEventSource` parameter's
-  value so synthetic events can exercise the pipeline; every metric filter keys on `detail-type`.
+  value so synthetic events can exercise the pipeline; feed metric filters key on `detail-type`, but
+  the two alarm filters also require the genuine `aws.*` source, so synthetic events never raise an
+  alarm (they count on the `SeedEvents` metric).
 - Generate a real signal when possible (for example `aws rds modify-db-instance
   --no-deletion-protection` on a throwaway instance) and prove the alarm with
   `aws cloudwatch describe-alarm-history`.

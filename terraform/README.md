@@ -7,7 +7,7 @@ repository (harness sub-commands, fixtures, docs) works the same way with either
 
 | Configuration | Deploys | CloudFormation equivalent |
 |---|---|---|
-| `central/` | Custom bus and policy, log group, 5 rules, 8 metric filters, SNS topic, 2 alarms, dashboard | `templates/rds-posture-central.yaml` |
+| `central/` | Custom bus and policy, log group, 5 rules, 9 metric filters, SNS topic, 2 alarms, dashboard | `templates/rds-posture-central.yaml` |
 | `member/` | Forwarder IAM role and 5 forwarding rules on the default bus of one account and Region | `templates/rds-posture-member.yaml` |
 | `member-stackset/` | A service-managed CloudFormation StackSet of the member template, for organization-wide rollout | `stackset-commands` output |
 

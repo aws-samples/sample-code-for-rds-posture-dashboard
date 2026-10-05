@@ -24,7 +24,9 @@ your own review, testing and hardening.
 - A "who changed protection posture" table from CloudTrail: deletion protection switched off,
   databases created without it, databases deleted, with principal, source IP and time.
 - Two alarms to an SNS topic: a transition alarm that fires once when someone disables deletion
-  protection, and a state alarm that re-fires while unprotected databases exist.
+  protection, and a state alarm that re-fires while unprotected databases exist. Both alarms count
+  only events whose source is the AWS service (`aws.rds`, `aws.securityhub`), so seeded and test
+  events never page; those appear on the `SeedEvents` metric instead.
 - Hourly trend metrics in the `RDSPosture` namespace and the native `AWS/TrustedAdvisor` metrics.
 - AWS Health planned lifecycle events for RDS (end of standard support notices) and, if you run
   your own Config rules, compliance changes on RDS resources.
@@ -49,7 +51,7 @@ Two deployments, available as CloudFormation templates (`templates/`) or as func
 Terraform configurations (`terraform/`, see [terraform/README.md](terraform/README.md)):
 
 - central (`templates/rds-posture-central.yaml` or `terraform/central`) – the bus, its resource
-  policy (same account plus any number of organization IDs), the log group, eight metric filters,
+  policy (same account plus any number of organization IDs), the log group, nine metric filters,
   two alarms, the SNS topic and the 12-widget dashboard. Deploy once, in us-east-1, in your
   monitoring account.
 - member (`templates/rds-posture-member.yaml` or `terraform/member`) – five forwarding rules on the
@@ -61,8 +63,9 @@ Terraform configurations (`terraform/`, see [terraform/README.md](terraform/READ
   (default `false`) drops the backup-Region copy of each AWS Health event. The Terraform variables
   `enable_security_hub_rule`, `enable_health_rule` and `exclude_health_backup_events` do the same.
 
-Everything keys on the event `detail-type`, not the source, so seeded and test events are treated
-exactly like live ones. The harness takes `--iac cloudformation` (default) or `--iac terraform`;
+The rules, tables and feed metrics key on the event `detail-type`, not the source, so seeded and
+test events are treated exactly like live ones; only the two alarm metric filters also require the
+AWS service source. The harness takes `--iac cloudformation` (default) or `--iac terraform`;
 every other sub-command is toolchain-agnostic.
 
 ## Prerequisites
@@ -262,6 +265,16 @@ CloudWatch Logs, CloudWatch, SNS and IAM (member role) resources; `events:PutEve
 bus for `seed` and `inject-test-events`; EventBridge, CloudWatch and Logs read access for `verify`
 and `capture`; and read access to Security Hub, Support (Trusted Advisor), Config, CloudTrail and
 RDS for `preflight` and `seed`. Run the walkthrough in a sandbox account first.
+
+Any principal in an admitted organization (or in the central account) can put custom events with
+the seed source onto the bus, and the rules store them like any other event. Such events cannot
+carry an AWS service source, because EventBridge reserves `source` values that begin with `aws.`
+for AWS services (see the `source` field in the
+[event structure reference](https://docs.aws.amazon.com/eventbridge/latest/ref/events-structure.html)),
+and both alarms count only `aws.rds` and `aws.securityhub` events, so a custom event cannot raise
+an alarm. It still appears in the dashboard tables, and its own `source` value in the raw log
+record (and in the `verify` events-by-source summary) tells it apart from CloudTrail or Security
+Hub events.
 
 ## Security issue notifications
 

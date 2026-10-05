@@ -245,7 +245,9 @@ Resources:
           Arn: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${EventLogGroup}
 
   # ---------------------------------------------------------------- metrics derived from the log
-  # Every metric filter keys on detail-type (not source) so seeded and test events count like real ones.
+  # Feed metric filters key on detail-type (not source) so seeded and test events count like real ones.
+  # The two filters behind the alarms also require the genuine AWS source (aws.rds, aws.securityhub),
+  # so a seeded or custom-source event can never raise an alarm; seeded events are counted on SeedEvents.
   TaFlaggedItemsFilter:
     Type: AWS::Logs::MetricFilter
     Properties:
@@ -288,7 +290,7 @@ Resources:
     Properties:
       LogGroupName: !Ref EventLogGroup
       FilterName: securityhub-rds-deletion-protection-failed
-      FilterPattern: '{ ($.detail-type = "Security Hub Findings - Imported") && ($.detail.findings[0].Compliance.Status = "FAILED") && (($.detail.findings[0].Compliance.SecurityControlId = "RDS.7") || ($.detail.findings[0].Compliance.SecurityControlId = "RDS.8")) }'
+      FilterPattern: '{ ($.source = "aws.securityhub") && ($.detail-type = "Security Hub Findings - Imported") && ($.detail.findings[0].Compliance.Status = "FAILED") && (($.detail.findings[0].Compliance.SecurityControlId = "RDS.7") || ($.detail.findings[0].Compliance.SecurityControlId = "RDS.8")) }'
       MetricTransformations:
         - MetricNamespace: RDSPosture
           MetricName: RdsDeletionProtectionFailedFindings
@@ -300,7 +302,7 @@ Resources:
     Properties:
       LogGroupName: !Ref EventLogGroup
       FilterName: api-rds-deletion-protection-disabled
-      FilterPattern: '{ ($.detail-type = "AWS API Call via CloudTrail") && ($.detail.eventSource = "rds.amazonaws.com") && (($.detail.eventName = "ModifyDBInstance") || ($.detail.eventName = "ModifyDBCluster")) && ($.detail.requestParameters.deletionProtection IS FALSE) }'
+      FilterPattern: '{ ($.source = "aws.rds") && ($.detail-type = "AWS API Call via CloudTrail") && ($.detail.eventSource = "rds.amazonaws.com") && (($.detail.eventName = "ModifyDBInstance") || ($.detail.eventName = "ModifyDBCluster")) && ($.detail.requestParameters.deletionProtection IS FALSE) }'
       MetricTransformations:
         - MetricNamespace: RDSPosture
           MetricName: RdsDeletionProtectionDisabledApiCalls
@@ -360,6 +362,18 @@ Resources:
           Dimensions:
             - Key: EventTypeCode
               Value: $.detail.eventTypeCode
+
+  SeedEventsFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref EventLogGroup
+      FilterName: seed-events
+      FilterPattern: !Sub '{ $.source = "${SeedEventSource}" }'
+      MetricTransformations:
+        - MetricNamespace: RDSPosture
+          MetricName: SeedEvents
+          MetricValue: '1'
+          Unit: Count
 
   # ---------------------------------------------------------------- alerting
   AlertsTopic:

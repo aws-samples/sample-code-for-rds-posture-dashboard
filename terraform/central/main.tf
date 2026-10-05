@@ -85,7 +85,9 @@ locals {
     }
   }
 
-  # Every metric filter keys on detail-type (not source) so seeded and test events count like real ones.
+  # Feed metric filters key on detail-type (not source) so seeded and test events count like real ones.
+  # The two filters behind the alarms also require the genuine AWS source (aws.rds, aws.securityhub),
+  # so a seeded or custom-source event can never raise an alarm; seeded events are counted on SeedEvents.
   securityhub_status_clause = var.metric_statuses == "all" ? "" : " && ($.detail.findings[0].Compliance.Status = \"FAILED\")"
 
   metric_filters = {
@@ -100,12 +102,12 @@ locals {
       dimensions = { ControlId = "$.detail.findings[0].Compliance.SecurityControlId", Status = "$.detail.findings[0].Compliance.Status" }
     }
     securityhub-rds-deletion-protection-failed = {
-      pattern    = "{ ($.detail-type = \"Security Hub Findings - Imported\") && ($.detail.findings[0].Compliance.Status = \"FAILED\") && (($.detail.findings[0].Compliance.SecurityControlId = \"RDS.7\") || ($.detail.findings[0].Compliance.SecurityControlId = \"RDS.8\")) }"
+      pattern    = "{ ($.source = \"aws.securityhub\") && ($.detail-type = \"Security Hub Findings - Imported\") && ($.detail.findings[0].Compliance.Status = \"FAILED\") && (($.detail.findings[0].Compliance.SecurityControlId = \"RDS.7\") || ($.detail.findings[0].Compliance.SecurityControlId = \"RDS.8\")) }"
       metric     = "RdsDeletionProtectionFailedFindings"
       dimensions = null
     }
     api-rds-deletion-protection-disabled = {
-      pattern    = "{ ($.detail-type = \"AWS API Call via CloudTrail\") && ($.detail.eventSource = \"rds.amazonaws.com\") && (($.detail.eventName = \"ModifyDBInstance\") || ($.detail.eventName = \"ModifyDBCluster\")) && ($.detail.requestParameters.deletionProtection IS FALSE) }"
+      pattern    = "{ ($.source = \"aws.rds\") && ($.detail-type = \"AWS API Call via CloudTrail\") && ($.detail.eventSource = \"rds.amazonaws.com\") && (($.detail.eventName = \"ModifyDBInstance\") || ($.detail.eventName = \"ModifyDBCluster\")) && ($.detail.requestParameters.deletionProtection IS FALSE) }"
       metric     = "RdsDeletionProtectionDisabledApiCalls"
       dimensions = null
     }
@@ -128,6 +130,11 @@ locals {
       pattern    = "{ ($.detail-type = \"AWS Health Event\") && ($.detail.service = \"RDS\") }"
       metric     = "HealthRdsEvents"
       dimensions = { EventTypeCode = "$.detail.eventTypeCode" }
+    }
+    seed-events = {
+      pattern    = "{ $.source = \"${var.seed_event_source}\" }"
+      metric     = "SeedEvents"
+      dimensions = null
     }
   }
 }
